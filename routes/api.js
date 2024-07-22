@@ -83,7 +83,7 @@ module.exports = function (app) {
     });
 
     Thread.findById(thread_id, (err, thread) => {
-      if (err || thread) {
+      if (err || !thread) {
         res.status(400).json({ error: "Thread not found" });
       }
 
@@ -104,5 +104,31 @@ module.exports = function (app) {
         });
       });
     });
+  });
+
+  // Route for retrieving a single thread with all its replies
+  app.route("/api/replies/:board").get((req, res) => {
+    const { board } = req.params;
+    const { thread_id } = req.query;
+
+    Thread.findById(thread_id)
+      .where("board")
+      .equals(board)
+      .populate({
+        path: "replies",
+        options: {
+          sort: { created_on: -1 },
+          select: "-reported -delete_password",
+        },
+      })
+      .select("-reported -delete_password")
+      .exec((err, thread) => {
+        if (err || !thread) {
+          console.log(err);
+          res.status(400).json({ error: "Thread not found" });
+        } else {
+          res.json(thread);
+        }
+      });
   });
 };
