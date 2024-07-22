@@ -1,6 +1,8 @@
 "use strict";
 
 const mongoose = require("mongoose");
+const Thread = require("../models/Thread");
+const Reply = require("../models/Reply");
 
 module.exports = function (app) {
   // MongoDB database connection string
