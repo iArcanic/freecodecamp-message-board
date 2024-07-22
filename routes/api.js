@@ -24,6 +24,7 @@ module.exports = function (app) {
     .then(() => console.log("MongoDB connected"))
     .catch((err) => console.log("MongoDB connection error:", err));
 
+  // Route for creating a new thread
   app.route("/api/threads/:board").post((req, res) => {
     const { text, delete_password } = req.body;
     const board = req.params.board;
@@ -45,5 +46,27 @@ module.exports = function (app) {
       });
   });
 
-  app.route("/api/replies/:board");
+  // Route for retrieving the 10 most recent threads with 3 replies each
+  app.route("/api/replies/:board").get((req, res) => {
+    const { board } = req.params;
+
+    Thread.find({ board })
+      .sort({ bumped_on: -1 })
+      .limit(10)
+      .populate({
+        path: "replies",
+        options: {
+          sort: { created_on: -1 },
+          limit: 3,
+        },
+      })
+      .exec((err, thread) => {
+        if (err) {
+          console.log(err);
+          res.status(500).json({ error: "Server error" });
+        } else {
+          res.json(thread);
+        }
+      });
+  });
 };
