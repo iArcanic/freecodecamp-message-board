@@ -23,6 +23,11 @@ app.use(helmet.dnsPrefetchControl({
   allow: false
 }));
 
+// Only allow site to be loaded in an iFrame on site's pages
+app.use(helmet.frameguard({
+  action: "sameorigin"
+}))
+
 //Sample front-end
 app.route('/b/:board/')
   .get(function (req, res) {
