@@ -131,4 +131,102 @@ module.exports = function (app) {
         }
       });
   });
+
+  // Route for deleting a thread
+  app.route("/api/threads/:board").delete((req, res) => {
+    const { thread_id, delete_password } = req.body;
+
+    Thread.findById(thread_id, (err, thread) => {
+      if (err || !thread) {
+        return res.status(400).json({ error: "Thread not found" });
+      }
+
+      if (thread.delete_password !== delete_password) {
+        return res.status(401).json({ error: "Incorrect password" });
+      }
+
+      Thread.findByIdAndRemove(thread_id, (err) => {
+        if (err) {
+          console.log(err);
+          return res.status(500).json({ error: "Server error" });
+        }
+
+        res.json({ message: "Thread deleted" });
+      });
+    });
+  });
+
+  // Route for deleting a reply
+  app.route("/api/replies/:board").delete((req, res) => {
+    const { thread_id, reply_id, delete_password } = req.body;
+
+    Thread.findById(thread_id, (err, thread) => {
+      if (err || !thread) {
+        return res.status(400).json({ error: "Thread not found" });
+      }
+
+      const reply = thread.replies.id(reply_id);
+      if (!reply) {
+        return res.status(400).json({ error: "Reply not found" });
+      }
+
+      if (reply.delete_password !== delete_password) {
+        return res.status(401).json({ error: "Incorrect password" });
+      }
+
+      reply.text = "[deleted]";
+      thread.save((err, updatedThread) => {
+        if (err) {
+          console.log(err);
+          return res.status(500).json({ error: "Server error" });
+        }
+
+        res.json({ message: "Reply deleted" });
+      });
+    });
+  });
+
+  // Route for reporting a thread
+  app.route("/api/threads/:board").put((req, res) => {
+    const { thread_id } = req.body;
+
+    Thread.findByIdAndUpdate(
+      thread_id,
+      { reported: true },
+      { new: true },
+      (err, thread) => {
+        if (err || !thread) {
+          return res.status(400).json({ error: "Thread not found" });
+        }
+
+        res.json({ message: "Thread reported" });
+      },
+    );
+  });
+
+  // Route for reporting a reply
+  app.route("/api/replies/:board").put((req, res) => {
+    const { thread_id, reply_id } = req.body;
+
+    Thread.findById(thread_id, (err, thread) => {
+      if (err || !thread) {
+        return res.status(400).json({ error: "Thread not found" });
+      }
+
+      const reply = thread.replies.id(reply_id);
+      if (!reply) {
+        return res.status(400).json({ error: "Reply not found" });
+      }
+
+      reply.reported = true;
+      thread.save((err, updatedThread) => {
+        if (err) {
+          console.log(err);
+          return res.status(500).json({ error: "Server error" });
+        }
+
+        res.json({ message: "Reply reported" });
+      });
+    });
+  });
 };
