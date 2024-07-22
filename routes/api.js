@@ -69,4 +69,40 @@ module.exports = function (app) {
         }
       });
   });
+
+  // Route for creating a new reply
+  app.route("/api/replies/:board").post((req, res) => {
+    const { thread_id, text, delete_password } = req.body;
+    const board = req.params.board;
+
+    const newReply = new Reply({
+      text,
+      delete_password,
+      thread_id,
+      board,
+    });
+
+    Thread.findById(thread_id, (err, thread) => {
+      if (err || thread) {
+        res.status(400).json({ error: "Thread not found" });
+      }
+
+      newReply.save((err, reply) => {
+        if (err) {
+          return res.status(500).json({ error: "Server error" });
+        }
+
+        thread.replies.push(reply);
+        thread.bumped_on = new Date();
+
+        thread.save((err, updatedThread) => {
+          if (err) {
+            return res.status(500).json({ error: "Server error" });
+          }
+
+          res.json(reply);
+        });
+      });
+    });
+  });
 };
