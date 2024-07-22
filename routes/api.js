@@ -24,7 +24,26 @@ module.exports = function (app) {
     .then(() => console.log("MongoDB connected"))
     .catch((err) => console.log("MongoDB connection error:", err));
 
-  app.route("/api/threads/:board");
+  app.route("/api/threads/:board").post((req, res) => {
+    const { text, delete_password } = req.body;
+    const board = req.params.board;
+
+    const newThread = new Thread({
+      text,
+      delete_password,
+      board,
+    });
+
+    newThread
+      .save()
+      .then((thread) => {
+        res.status(201).json(thread);
+      })
+      .catch((err) => {
+        console.log(err);
+        res.status(500).json({ error: "Server error" });
+      });
+  });
 
   app.route("/api/replies/:board");
 };
