@@ -1,232 +1,114 @@
 "use strict";
 
-const mongoose = require("mongoose");
-const Thread = require("../models/Thread");
-const Reply = require("../models/Reply");
+let db = {};
 
 module.exports = function (app) {
-  // MongoDB database connection string
-  const uri =
-    "mongodb+srv://" +
-    process.env.DB_USER +
-    ":" +
-    process.env.DB_PASSWORD +
-    "@" +
-    process.env.CLUSTER +
-    "/" +
-    process.env.DB +
-    "?retryWrites=true&w=majority&appName=" +
-    process.env.APP_NAME;
-
-  // Connect to the MongoDB database
-  mongoose
-    .connect(uri, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => console.log("MongoDB connected"))
-    .catch((err) => console.log("MongoDB connection error:", err));
-
-  // Route for creating a new thread
-  app.route("/api/threads/:board").post((req, res) => {
-    const { text, delete_password } = req.body;
-    const board = req.params.board;
-
-    const newThread = new Thread({
-      text,
-      delete_password,
-      board,
+  app
+    .route("/api/threads/:board")
+    .post((req, res) => {
+      const { board } = req.params;
+      const { text, delete_password } = req.body;
+      const newRecord = {
+        _id: db[board]?.length || 0,
+        text,
+        created_on: Date(),
+        bumped_on: Date(),
+        reported: false,
+        delete_password,
+        replies: [],
+      };
+      if (db[board]) {
+        db[board].push(newRecord);
+      } else {
+        db[board] = [newRecord];
+      }
+      res.json(newRecord);
+    })
+    .get((req, res) => {
+      const { board } = req.params;
+      let filteredArr = db[board].map((el) => ({
+        _id: el._id,
+        created_on: el.created_on,
+        bumped_on: el.bumped_on,
+        text: el.text,
+        replies: el.replies.map((reply) => ({
+          _id: reply._id,
+          text: reply.text,
+          created_on: reply.created_on,
+        })),
+      }));
+      res.json(filteredArr);
+    })
+    .delete((req, res) => {
+      const { board } = req.params;
+      const { thread_id, delete_password } = req.body;
+      let thread = db[board][thread_id];
+      if (thread.delete_password === delete_password) {
+        db[board] = [
+          ...db[board].slice(0, thread_id),
+          ...db[board].slice(thread_id + 1),
+        ];
+        res.send("success");
+      } else {
+        res.status(401).send("incorrect password");
+      }
+    })
+    .put((req, res) => {
+      const { board } = req.params;
+      const { thread_id } = req.body;
+      db[board][thread_id].reported = true;
+      res.send("reported");
     });
 
-    newThread
-      .save()
-      .then((thread) => {
-        res.status(201).json(thread);
-      })
-      .catch((err) => {
-        console.log(err);
-        res.status(500).json({ error: "Server error" });
-      });
-  });
-
-  // Route for retrieving the 10 most recent threads with 3 replies each
-  app.route("/api/replies/:board").get((req, res) => {
-    const { board } = req.params;
-
-    Thread.find({ board })
-      .sort({ bumped_on: -1 })
-      .limit(10)
-      .populate({
-        path: "replies",
-        options: {
-          sort: { created_on: -1 },
-          limit: 3,
-        },
-      })
-      .exec((err, thread) => {
-        if (err) {
-          console.log(err);
-          res.status(500).json({ error: "Server error" });
-        } else {
-          res.json(thread);
-        }
-      });
-  });
-
-  // Route for creating a new reply
-  app.route("/api/replies/:board").post((req, res) => {
-    const { thread_id, text, delete_password } = req.body;
-    const board = req.params.board;
-
-    const newReply = new Reply({
-      text,
-      delete_password,
-      thread_id,
-      board,
+  app
+    .route("/api/replies/:board")
+    .post((req, res) => {
+      const { board } = req.params;
+      const { text, delete_password, thread_id } = req.body;
+      db[board][thread_id].bumped_on = Date();
+      const newReply = {
+        _id: db[board][thread_id].replies.length,
+        text,
+        created_on: Date(),
+        delete_password,
+        reported: false,
+      };
+      db[board][thread_id].replies.push(newReply);
+      res.json(db[board][thread_id]);
+    })
+    .get((req, res) => {
+      const { board } = req.params;
+      const { thread_id } = req.query;
+      let el = db[board][thread_id];
+      let filteredThread = {
+        _id: el._id,
+        created_on: el.created_on,
+        bumped_on: el.bumped_on,
+        text: el.text,
+        replies: el.replies.map((reply) => ({
+          _id: reply._id,
+          text: reply.text,
+          created_on: reply.created_on,
+        })),
+      };
+      console.log(filteredThread);
+      res.json(filteredThread);
+    })
+    .put((req, res) => {
+      const { board } = req.params;
+      const { thread_id, reply_id } = req.body;
+      db[board][thread_id]["replies"][reply_id].reported = true;
+      res.send("reported");
+    })
+    .delete((req, res) => {
+      const { board } = req.params;
+      const { thread_id, reply_id, delete_password } = req.body;
+      let thread = db[board][thread_id];
+      if (thread.replies[reply_id].delete_password === delete_password) {
+        thread.replies[reply_id].text = "[deleted]";
+        res.send("success");
+      } else {
+        res.status(401).send("incorrect password");
+      }
     });
-
-    Thread.findById(thread_id, (err, thread) => {
-      if (err || !thread) {
-        res.status(400).json({ error: "Thread not found" });
-      }
-
-      newReply.save((err, reply) => {
-        if (err) {
-          return res.status(500).json({ error: "Server error" });
-        }
-
-        thread.replies.push(reply);
-        thread.bumped_on = new Date();
-
-        thread.save((err, updatedThread) => {
-          if (err) {
-            return res.status(500).json({ error: "Server error" });
-          }
-
-          res.json(reply);
-        });
-      });
-    });
-  });
-
-  // Route for retrieving a single thread with all its replies
-  app.route("/api/replies/:board").get((req, res) => {
-    const { board } = req.params;
-    const { thread_id } = req.query;
-
-    Thread.findById(thread_id)
-      .where("board")
-      .equals(board)
-      .populate({
-        path: "replies",
-        options: {
-          sort: { created_on: -1 },
-          select: "-reported -delete_password",
-        },
-      })
-      .select("-reported -delete_password")
-      .exec((err, thread) => {
-        if (err || !thread) {
-          console.log(err);
-          res.status(400).json({ error: "Thread not found" });
-        } else {
-          res.json(thread);
-        }
-      });
-  });
-
-  // Route for deleting a thread
-  app.route("/api/threads/:board").delete((req, res) => {
-    const { thread_id, delete_password } = req.body;
-
-    Thread.findById(thread_id, (err, thread) => {
-      if (err || !thread) {
-        return res.status(400).json({ error: "Thread not found" });
-      }
-
-      if (thread.delete_password !== delete_password) {
-        return res.status(401).json({ error: "Incorrect password" });
-      }
-
-      Thread.findByIdAndRemove(thread_id, (err) => {
-        if (err) {
-          console.log(err);
-          return res.status(500).json({ error: "Server error" });
-        }
-
-        res.json({ message: "Thread deleted" });
-      });
-    });
-  });
-
-  // Route for deleting a reply
-  app.route("/api/replies/:board").delete((req, res) => {
-    const { thread_id, reply_id, delete_password } = req.body;
-
-    Thread.findById(thread_id, (err, thread) => {
-      if (err || !thread) {
-        return res.status(400).json({ error: "Thread not found" });
-      }
-
-      const reply = thread.replies.id(reply_id);
-      if (!reply) {
-        return res.status(400).json({ error: "Reply not found" });
-      }
-
-      if (reply.delete_password !== delete_password) {
-        return res.status(401).json({ error: "Incorrect password" });
-      }
-
-      reply.text = "[deleted]";
-      thread.save((err, updatedThread) => {
-        if (err) {
-          console.log(err);
-          return res.status(500).json({ error: "Server error" });
-        }
-
-        res.json({ message: "Reply deleted" });
-      });
-    });
-  });
-
-  // Route for reporting a thread
-  app.route("/api/threads/:board").put((req, res) => {
-    const { thread_id } = req.body;
-
-    Thread.findByIdAndUpdate(
-      thread_id,
-      { reported: true },
-      { new: true },
-      (err, thread) => {
-        if (err || !thread) {
-          return res.status(400).json({ error: "Thread not found" });
-        }
-
-        res.json({ message: "Thread reported" });
-      },
-    );
-  });
-
-  // Route for reporting a reply
-  app.route("/api/replies/:board").put((req, res) => {
-    const { thread_id, reply_id } = req.body;
-
-    Thread.findById(thread_id, (err, thread) => {
-      if (err || !thread) {
-        return res.status(400).json({ error: "Thread not found" });
-      }
-
-      const reply = thread.replies.id(reply_id);
-      if (!reply) {
-        return res.status(400).json({ error: "Reply not found" });
-      }
-
-      reply.reported = true;
-      thread.save((err, updatedThread) => {
-        if (err) {
-          console.log(err);
-          return res.status(500).json({ error: "Server error" });
-        }
-
-        res.json({ message: "Reply reported" });
-      });
-    });
-  });
 };
